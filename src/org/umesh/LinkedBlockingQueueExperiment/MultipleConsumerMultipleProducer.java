@@ -1,36 +1,112 @@
 package org.umesh.LinkedBlockingQueueExperiment ;
 
+import java.util.ArrayList;
 import java.util.Vector;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+
+import org.umesh.Workers.CountDownLatchAwareConsumer;
+import org.umesh.Workers.CountDownLatchAwareProducer;
+import org.umesh.Workers.SimpleProducer;
+import org.umesh.Workers.SimpleConsumer;
+
 
 
 //I should refactor this code to be better
 public class MultipleConsumerMultipleProducer {
 
 	static LinkedBlockingQueue<Integer> q1 = new LinkedBlockingQueue<Integer>();
-	static int MAX = 1000000;
 	
-	public static void main(String args[]) throws InterruptedException {
+	public static void main(String args[]) throws InterruptedException, ExecutionException {
 		
 		
-		int trials =5;
-		for( int THREAD_COUNT =1 ; THREAD_COUNT < 100 ; THREAD_COUNT += 10) {
-			MAX = MAX/THREAD_COUNT;
-			long duration =  0 ;
-			for( int i=0;i<trials ;i++)
-				duration +=runTest(THREAD_COUNT);
-			System.out.println(" ThreadCount:" + THREAD_COUNT + "  Duration is " + duration/trials);
-			MAX = 1000000;
-		}
+		int trials =1;
+		double totalProducerPackets = 100000;
+		double totalConsumerPackets = 100000;
+		
+		int producerThreads = 10;
+		int consumerThreads = 10;
+		int producerThreadPool = 1;
+		int consumerThreadPool =1;
+		
+		int produce = (int) (totalProducerPackets/producerThreads);
+		int consume = (int) (totalConsumerPackets/consumerThreads);
+		
+		runThreadPoolTestSimpleApproach(producerThreads, consumerThreads, producerThreadPool, consumerThreadPool, produce, consume);
+		runThreadPoolTestSimple2Approach(producerThreads, consumerThreads, producerThreadPool, consumerThreadPool, produce, consume);
 	}
 	
-	public static long runTest( int THREAD_COUNT  ) throws InterruptedException {
+	//all threads start at same time
+	public static void runThreadPoolTestSimple2Approach( int producerCount, int consumerCount, int producerThreadPoolSize, int consumerThreadPoolSize, int produce, int consume  ) throws InterruptedException {
+		ExecutorService producersES = Executors.newFixedThreadPool(producerThreadPoolSize);
+		ExecutorService consumersES = Executors.newFixedThreadPool(consumerThreadPoolSize);
+		ArrayList<Future> runningThreadsTrackers = new ArrayList<Future>(); //what type parameter should i pass in to future here ?
+		
+		CountDownLatch producerStartSignal = new CountDownLatch(1);
+		CountDownLatch consumerStartSignal = new CountDownLatch(1);
+		for ( int i =0; i < producerCount ; i++) {
+			CountDownLatchAwareProducer t1 = new CountDownLatchAwareProducer(i,produce,q1, producerStartSignal);
+			Future f = producersES.submit(t1); //better exception eating than execute
+			runningThreadsTrackers.add(f);
+		}
+		
+		for ( int i =0; i < consumerCount ; i++) {
+			CountDownLatchAwareConsumer t2 =new CountDownLatchAwareConsumer(i, consume,q1, consumerStartSignal);
+			Future f = consumersES.submit(t2);
+			runningThreadsTrackers.add(f);
+		}
+		
+		System.out.println("Starting all threads now");
+		producerStartSignal.countDown();
+		consumerStartSignal.countDown();
+		//wait for futures to finish
+		for ( Future f : runningThreadsTrackers) {
+			while(!f.isDone()) {
+				Thread.sleep(100);
+			}
+		}
+		System.out.println(" All threads have finished");
+	}
+	
+	//run threads thru pool's..threads start at different timings...crude waiting for all to finish
+	public static void runThreadPoolTestSimpleApproach( int producerCount, int consumerCount, int producerThreadPoolSize, int consumerThreadPoolSize, int produce, int consume  ) throws InterruptedException, ExecutionException {
+		ExecutorService producersES = Executors.newFixedThreadPool(producerThreadPoolSize);
+		ExecutorService consumersES = Executors.newFixedThreadPool(consumerThreadPoolSize);
+		ArrayList<Future> runningThreadsTrackers = new ArrayList<Future>(); //what type parameter should i pass in to future here ?
+		
+		for ( int i =0; i < producerCount ; i++) {
+			org.umesh.Workers.SimpleProducer t1 = new org.umesh.Workers.SimpleProducer(i,produce,q1);
+			Future f = producersES.submit(t1); //better exception eating than execute
+			runningThreadsTrackers.add(f);
+		}
+		
+		for ( int i =0; i < consumerCount ; i++) {
+			SimpleConsumer t2 =new SimpleConsumer(i, consume,q1);
+			Future f = consumersES.submit(t2);
+			runningThreadsTrackers.add(f);
+		}
+		
+		//wait for futures to finish
+		for ( Future f : runningThreadsTrackers) {
+			f.get();
+		}
+		System.out.println(" All threads have finished");
+		
+	}
+		
+	
+	//create individual threads
+	public static long runTest( int THREAD_COUNT, int produce, int consume  ) throws InterruptedException {
 		long begin = System.currentTimeMillis();
 		//System.out.println(" Creating threads Time: " + begin);
 		Vector<Thread> threads = new Vector<Thread>();
 		for ( int i =0; i < THREAD_COUNT ; i++) {
-			Thread t1 = new Thread ( new Producer());
-			Thread t2 = new Thread ( new Consumer());
+			Thread t1 = new Thread ( new org.umesh.Workers.SimpleProducer(i,produce,q1));
+			Thread t2 = new Thread ( new SimpleConsumer(i, consume,q1));
 			threads.add(t1);
 			threads.add(t2);
 		}
@@ -43,46 +119,8 @@ public class MultipleConsumerMultipleProducer {
 			threads.get(i).join();
 		
 		long end = System.currentTimeMillis();
-		System.out.println(" End Time: " + end + " Duration : " + (end - begin ) + " to consume: " + MAX + " Threads: " + THREAD_COUNT);
+		System.out.println(" End Time: " + end + " Duration : " + (end - begin ) + " to consume: " + produce*THREAD_COUNT + " Threads: " + THREAD_COUNT);
 		return ( end- begin);
-		
-	}
-	public static class Producer implements Runnable {
-
-		@Override
-		public void run() {
-			int i = 0 ;
-			while ( i < MAX) {
-				q1.add(i);
-				i++;
-				if( i % (MAX/2) == 0  ) {
-					System.out.print(" Produced : " + i);
-				}
-			}
-		}
-
-	}
-
-	public static class Consumer implements Runnable {
-
-		@Override
-		public void run() {
-			int i=0;
-			while ( i < MAX) {
-				try {
-					q1.take();
-					i++;
-					if( i % (MAX/2) == 0  ) {
-						System.out.print(" Consumed : " + i);
-					}
-				
-				} catch (InterruptedException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-			}
-			
-		}
 		
 	}
 }
