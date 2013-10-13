@@ -2,7 +2,7 @@ package org.umesh.Workers;
 
 import java.util.concurrent.LinkedBlockingQueue;
 
-public class SimpleProducer implements Runnable {
+public class SimpleProducer implements Producer {
 
 	public SimpleProducer(int id , int packetsToProduce, LinkedBlockingQueue<Integer> q1) {
 		super();

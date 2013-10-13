@@ -5,18 +5,13 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class CountDownLatchAwareProducer extends SimpleProducer {
 	public CountDownLatchAwareProducer(int id, int packetsToProduce,
-			LinkedBlockingQueue<Integer> q1, CountDownLatch startLatch) {
+			LinkedBlockingQueue<Integer> q1, CountDownLatch startLatch, CountDownLatch producerFinishedSignal) {
 		super(id, packetsToProduce, q1);
 		this.startLatch = startLatch;
+		this.finishLatch = producerFinishedSignal;
 	}
-
-	public CountDownLatchAwareProducer(int id, int packetsToProduce,
-			LinkedBlockingQueue<Integer> q1) {
-		super(id, packetsToProduce, q1);
-		// TODO Auto-generated constructor stub
-	}
-
 	CountDownLatch startLatch;
+	CountDownLatch finishLatch;
 	
 	@Override
 	public void run() {
@@ -27,5 +22,6 @@ public class CountDownLatchAwareProducer extends SimpleProducer {
 			e.printStackTrace();
 		}
 		super.run();
+		finishLatch.countDown();
 	}
 }
